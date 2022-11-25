@@ -1,0 +1,83 @@
+Description: >
+  XamYxar
+  Challenge3-Server
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+  AMItoUse:
+    Description: AMI to use for our base image (Amazon Linux 2)
+    Type: String      
+#${EnvironmentName}-VPCID, type: AWS::EC2::VPC::Id
+#${EnvironmentName}-PUB-SN, type AWS::EC2::Subnet::Id
+#${EnvironmentName}-PRV-SN
+Resources:
+# Role to allow EC2 session manager to access our server
+# seems this role has only access to get by name , no put or get by path,...
+#OK: aws ssm get-parameters --name /dev/name1 --region us-east-1
+#not allowed:
+#aws ssm put-parameter --name test1 --type String --value test1Val333 --region us-east-1 --overwrite
+#aws ssm get-parameters-by-path --path /dev --region us-east-1
+  RoleForSSMAccess:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+#Instance Profile
+  ServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile    
+    Properties:      
+      Roles: 
+        - !Ref RoleForSSMAccess
+ 
+# Security Group
+  WebAccessSecurityGroup:
+    Type: AWS::EC2::SecurityGroup    
+    Properties:
+      GroupDescription: Allow http to our hosts and SSH from local only
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-VPCID"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0    
+
+# Server EC2 Instance (pub ip just for test)
+  ServerInstance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !Ref AMItoUse    
+      InstanceType: t3.micro
+      KeyName: xam-ec2-key
+      IamInstanceProfile: !Ref ServerInstanceProfile      
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          Description: server
+          DeviceIndex: '0'
+          GroupSet: 
+            - Ref: WebAccessSecurityGroup
+          SubnetId: 
+            Fn::ImportValue: !Sub "${EnvironmentName}-PRV-SN" 
+### if wet the above line to Fn::ImportValue: !Sub "${EnvironmentName}-PRV-SN" ssh wont work
+### if wet the above line to Fn::ImportValue: !Sub "${EnvironmentName}-PUB-SN" ssh will work
